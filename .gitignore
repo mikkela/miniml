@@ -3,6 +3,7 @@
 # -------------------------
 /build/
 /cmake-build-*/
+/cmake-build-debug/
 /out/
 
 # CMake generated files
@@ -49,3 +50,10 @@ compile_commands.json
 .AppleDouble
 .LSOverride
 
+# -------------------------
+# ANTLR generated sources (optional)
+# Comment out if you *do* want them under version control
+# -------------------------
+src/lexer_parser/gen/*
+/antlr-4.13.1-complete.jar
+/Int
