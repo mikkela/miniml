@@ -1,0 +1,11 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: cmake -S . -B build -G Ninja -DENABLE_ANTLR=OFF -DENABLE_LLVM=OFF
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
