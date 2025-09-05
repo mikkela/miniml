@@ -1,44 +1,19 @@
 #include <iostream>
-#include <fstream>
-#include <sstream>
-#include <antlr4-runtime.h>
-#include "StrictErrorListener.hpp"
-#include "MiniMLLexer.h"
-#include "MiniMLParser.h"
+#include <string>
+#include "parser/parse_to_ast.hpp"
+//#include "ast/Pretty.hpp"   // if you have a pretty-printer; else skip
 
 int main(int argc, char** argv) {
-  try {
-    std::string code;
-    if (argc > 1) {
-      std::ifstream in(argv[1]);
-      if (!in) { std::cerr << "Cannot open file: " << argv[1] << "\n"; return 1; }
-      std::ostringstream ss; ss << in.rdbuf();
-      code = ss.str();
-    } else {
-      code = "let id = \\x -> x in id 42";
+    try {
+        std::string code = (argc > 1) ? std::string(argv[1]) : "let id = \\x -> x in id 42";
+        // If you want to read a file, add a file load here; this uses arg as code snippet.
+        auto ast = miniml::parse_to_ast(code);
+        // If you don’t have Pretty, just confirm success:
+        std::cout << "Parsed OK\n";
+        // std::cout << miniml::pretty(ast) << "\n";
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Parse error: " << e.what() << "\n";
+        return 1;
     }
-
-    antlr4::ANTLRInputStream input(code);
-    MiniMLLexer lexer(&input);
-    antlr4::CommonTokenStream tokens(&lexer);
-
-    StrictErrorListener strict;
-    lexer.removeErrorListeners();
-    lexer.addErrorListener(&strict);
-    tokens.fill();
-
-    MiniMLParser parser(&tokens);
-    parser.removeErrorListeners();
-    parser.addErrorListener(&strict);
-
-    auto* tree = parser.prog();
-    std::cout << tree->toStringTree(&parser) << "\n";
-    return 0;
-  } catch (const ParseError& e) {
-    std::cerr << "PARSE FAIL: " << e.what() << "\n";
-    return 2;
-  } catch (const std::exception& e) {
-    std::cerr << "ERROR: " << e.what() << "\n";
-    return 1;
-  }
 }

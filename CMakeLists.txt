@@ -39,7 +39,29 @@ if (MINIML_SRC STREQUAL "")
   message(WARNING "No sources found under src/. Ensure you have at least one .cpp file.")
 endif()
 
-add_library(miniml STATIC ${MINIML_SRC})
+# --- Core target (explicit file list) ---
+add_library(miniml STATIC
+        # AST
+        src/ast/Nodes.hpp
+
+        # Types
+        src/types/Type.hpp
+        src/types/Type.cpp
+        #src/types/TypeEnv.hpp
+        src/types/TypeCheck.hpp
+        #src/types/TypeCheck.cpp
+        src/types/Unify.hpp
+
+        # IR (if present)
+        src/ir/IR.hpp
+        #src/ir/IR.cpp
+
+        # Parser glue (new)
+        src/parser/StrictErrorListener.hpp
+        src/parser/AstBuilder.hpp
+        src/parser/parse_to_ast.hpp
+)
+
 target_include_directories(miniml PUBLIC src)
 
 # ----------------------------
@@ -203,6 +225,7 @@ if (ENABLE_GTEST AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parser.cpp)
   enable_testing()
   add_executable(miniml_tests
           tests/test_parser.cpp
+          tests/test_parse_to_ast.cpp
   )
   target_link_libraries(miniml_tests PRIVATE miniml gtest_main)
   include(GoogleTest)
