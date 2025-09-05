@@ -9,11 +9,17 @@ namespace miniml {
 struct Expr;
 using ExprPtr = std::shared_ptr<Expr>;
 
+// An identifier. Looks up its meaning in the current environment (during typecheck / eval).
 struct EVar { std::string name; };
+// An integer literal.
 struct ELitInt { long value; };
+// A lambda/function with one parameter. (Currying means multi-arg functions are nested lambdas.)
 struct ELam { std::string param; ExprPtr body; };
+// Function application. Left-associative: f a b parses/lowers to EApp(EApp(f,a), b).
 struct EApp { ExprPtr fn; ExprPtr arg; };
+// A local binding: let name = rhs in body. Introduces a new scope for body.
 struct ELet { std::string name; ExprPtr rhs; ExprPtr body; };
+// Conditional expression (not a statement). Both branches are expressions.
 struct EIf  { ExprPtr cnd, thn, els; };
 
 struct Expr {

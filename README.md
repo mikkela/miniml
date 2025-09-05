@@ -59,6 +59,11 @@ tests/          GoogleTest-based unit tests
 examples/       Example Mini-ML programs
 docs/           Documentation
 ```
+## Language Reference
+
+The formal description of the Mini-ML core language is available here:
+
+➡️ [Mini-ML (Step 1) — Language Specification](docs/language.md)
 
 ## Roadmap
 - [x] Basic AST and type inference
