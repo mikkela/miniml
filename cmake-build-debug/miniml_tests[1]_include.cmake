@@ -1,5 +1,0 @@
-if(EXISTS "/Users/mikkelarentoft/sandbox/github/mikkela/miniml/cmake-build-debug/miniml_tests[1]_tests.cmake")
-  include("/Users/mikkelarentoft/sandbox/github/mikkela/miniml/cmake-build-debug/miniml_tests[1]_tests.cmake")
-else()
-  add_test(miniml_tests_NOT_BUILT miniml_tests_NOT_BUILT)
-endif()
