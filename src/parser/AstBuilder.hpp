@@ -5,61 +5,77 @@
 #include "../ast/Nodes.hpp"      // your EVar, ELitInt, ELam, EApp, ELet, EIf
 
 namespace miniml {
+  inline SrcLoc loc_from(antlr4::Token* tok, std::string filehint = {}) {
+    // ANTLR line is 1-based; charPositionInLine is 0-based ⇒ add 1
+    SrcLoc L;
+    L.file = std::move(filehint);
+    L.line = tok ? static_cast<int>(tok->getLine()) : 1;
+    L.col  = tok ? static_cast<int>(tok->getCharPositionInLine()) + 1 : 1;
+    return L;
+  }
 
-    class AstBuilder : public MiniMLBaseVisitor {
-    public:
-        using Ptr = ExprPtr;
+  class AstBuilder : public MiniMLBaseVisitor {
+  public:
+    using Ptr = ExprPtr;
 
-        std::any visitProg(MiniMLParser::ProgContext* ctx) override {
-            return visit(ctx->expr());
-        }
+    // Set this to the current filename before calling visit()
+    std::string currentFile = "<stdin>";
 
-        std::any visitLetExpr(MiniMLParser::LetExprContext* ctx) override {
-            auto name = ctx->ID()->getText();
-            auto rhs  = asExpr(visit(ctx->expr(0)));
-            auto body = asExpr(visit(ctx->expr(1)));
-            return Ptr(let_(name, rhs, body));
-        }
+    std::any visitProg(MiniMLParser::ProgContext* ctx) override {
+      return visit(ctx->expr());
+    }
 
-        std::any visitIfExpr(MiniMLParser::IfExprContext* ctx) override {
-            auto c = asExpr(visit(ctx->expr(0)));
-            auto t = asExpr(visit(ctx->expr(1)));
-            auto e = asExpr(visit(ctx->expr(2)));
-            return Ptr(if_(c, t, e));
-        }
+    std::any visitLetExpr(MiniMLParser::LetExprContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      auto name = ctx->ID()->getText();
+      auto rhs  = asExpr(visit(ctx->expr(0)));
+      auto body = asExpr(visit(ctx->expr(1)));
+      return Ptr(let_(name, rhs, body, L));
+    }
 
-        std::any visitLamExpr(MiniMLParser::LamExprContext* ctx) override {
-            auto x = ctx->ID()->getText();
-            auto b = asExpr(visit(ctx->expr()));
-            return Ptr(lam(x, b));
-        }
+    std::any visitIfExpr(MiniMLParser::IfExprContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      auto c = asExpr(visit(ctx->expr(0)));
+      auto t = asExpr(visit(ctx->expr(1)));
+      auto e = asExpr(visit(ctx->expr(2)));
+      return Ptr(if_(c, t, e, L));
+    }
 
-        std::any visitAppChain(MiniMLParser::AppChainContext* ctx) override {
-            // appExpr: atom (atom)+
-            Ptr f = asExpr(visit(ctx->atom(0)));
-            for (size_t i = 1; i < ctx->atom().size(); ++i) {
-                Ptr a = asExpr(visit(ctx->atom(i)));
-                f = app(f, a); // left-assoc: (((f a1) a2) ...)
-            }
-            return f;
-        }
+    std::any visitLamExpr(MiniMLParser::LamExprContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      auto x = ctx->ID()->getText();
+      auto b = asExpr(visit(ctx->expr()));
+      return Ptr(lam(x, b, L));
+    }
 
-        std::any visitJustAtom(MiniMLParser::JustAtomContext* ctx) override {
-            return visit(ctx->atom());
-        }
+    std::any visitAppChain(MiniMLParser::AppChainContext* ctx) override {
+      // location: start of the chain (first atom)
+      auto L = loc_from(ctx->getStart(), currentFile);
+      Ptr f = asExpr(visit(ctx->atom(0)));
+      for (size_t i = 1; i < ctx->atom().size(); ++i) {
+        Ptr a = asExpr(visit(ctx->atom(i)));
+        // each application node gets the chain start location
+        f = app(f, a, L);
+      }
+      return f;
+    }
 
-        std::any visitAtom(MiniMLParser::AtomContext* ctx) override {
-            if (ctx->INT()) return Ptr(lit_int(std::stol(ctx->INT()->getText())));
-            if (ctx->ID())  return Ptr(var(ctx->ID()->getText()));
-            // '(' expr ')'
-            return asExpr(visit(ctx->expr()));
-        }
+    std::any visitJustAtom(MiniMLParser::JustAtomContext* ctx) override {
+      return visit(ctx->atom());
+    }
 
-    private:
-        static Ptr asExpr(const std::any& a) {
-            if (!a.has_value()) return nullptr;
-            return std::any_cast<Ptr>(a);
-        }
-    };
+    std::any visitAtom(MiniMLParser::AtomContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      if (ctx->INT()) return Ptr(lit_int(std::stol(ctx->INT()->getText()), L));
+      if (ctx->ID())  return Ptr(var(ctx->ID()->getText(), L));
+      // '(' expr ')' — propagate inner loc rather than '(' loc:
+      return asExpr(visit(ctx->expr()));
+    }
 
+  private:
+    static Ptr asExpr(const std::any& a) {
+      if (!a.has_value()) return nullptr;
+      return std::any_cast<Ptr>(a);
+    }
+  };
 } // namespace miniml
