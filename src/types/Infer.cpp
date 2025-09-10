@@ -46,6 +46,11 @@ namespace miniml {
         return { Type::tInt(), {} };
       },
 
+      // Bool literal
+      [&](const ELitBool& /*n*/) -> InferResult {
+        return { Type::tBool(), {} };
+      },
+
       // Lambda
       [&](const ELam& n) -> InferResult {
         auto a = freshTVar();
@@ -106,8 +111,60 @@ namespace miniml {
         s.compose(u2);
 
         return { applySubst(s, rt.type), s };
-      }
+      },
 
+      // Unary 'not'
+      [&](const EUnOp& n) -> InferResult {
+        switch (n.op) {
+          case UnOp::Not: {
+            auto r = infer_expr(*n.expr, gamma);
+            auto u = unify(r.type, Type::tBool(), n.loc);
+            Subst s{};
+            s.compose(r.subst);
+            s.compose(u);
+            return { Type::tBool(), s };
+          }
+        }
+        // unreachable
+        return { Type::tBool(), {} };
+      },
+
+      // Binary operators
+      [&](const EBinOp& n) -> InferResult {
+        auto L = n.loc;
+        auto l = infer_expr(*n.lhs, gamma);
+        auto r = infer_expr(*n.rhs, gamma);
+        auto expect = [&](TypePtr tl, TypePtr tr, TypePtr tres) -> InferResult {
+          Subst s{};
+          s.compose(l.subst);
+          s.compose(r.subst);
+          auto u1 = unify(applySubst(s, l.type), tl, L);
+          s.compose(u1);
+          auto u2 = unify(applySubst(s, r.type), tr, L);
+          s.compose(u2);
+          return { tres, s };
+        };
+        switch (n.op) {
+          case BinOp::Add:
+          case BinOp::Sub:
+          case BinOp::Mul:
+          case BinOp::Div:
+            return expect(Type::tInt(), Type::tInt(), Type::tInt());
+          case BinOp::Eq:
+          case BinOp::Neq:
+            // Step 1: ints only (polymorphic eq later)
+            return expect(Type::tInt(), Type::tInt(), Type::tBool());
+          case BinOp::Lt:
+          case BinOp::Le:
+          case BinOp::Gt:
+          case BinOp::Ge:
+            return expect(Type::tInt(), Type::tInt(), Type::tBool());
+          case BinOp::And:
+          case BinOp::Or:
+            return expect(Type::tBool(), Type::tBool(), Type::tBool());
+        }
+        return { Type::tInt(), {} }; // unreachable default
+      }
     }, e);
   }
 

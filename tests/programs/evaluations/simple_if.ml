@@ -1,1 +1,1 @@
-if (\x -> x) 1 then 1 else 0                (* Value: 1 *)
+if true then 1 else 0                (* Value: 1 *)

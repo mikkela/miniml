@@ -61,6 +61,7 @@ private:
         if (!env_.isBound(n.name)) unbound(n.name, n.loc);
       },
       [&](const ELitInt&) { /* ok */ },
+      [&](const ELitBool&) { /* ok */ },
       [&](const ELam& n) {
         env_.push();
         bind_with_warning(n.param, n.loc);
@@ -83,6 +84,13 @@ private:
         bind_with_warning(n.name, n.loc);
         check_expr(*n.body);
         env_.pop();
+      },
+      [&](const EUnOp& n) {
+        check_expr(*n.expr);
+      },
+      [&](const EBinOp& n) {
+        check_expr(*n.lhs);
+        check_expr(*n.rhs);
       }
     }, e);
   }

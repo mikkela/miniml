@@ -22,6 +22,7 @@ static Val eval1(const Expr& e, std::shared_ptr<EnvV> env) {
       return v;
     },
     [&](const ELitInt& n) -> Val { return static_cast<long>(n.value); },
+    [&](const ELitBool& n) -> Val { return static_cast<bool>(n.value); },
     [&](const ELam& n) -> Val {
       return std::make_shared<Closure>(Closure{n.param, n.body, env});
     },
@@ -52,6 +53,60 @@ static Val eval1(const Expr& e, std::shared_ptr<EnvV> env) {
       child->parent = env;
       child->m[n.name] = v1;
       return eval(n.body, child);
+    },
+    // Unary not
+    [&](const EUnOp& n) -> Val {
+      Val v = eval(n.expr, env);
+      bool b = false;
+      if (auto pb = std::get_if<bool>(&v)) b = *pb;
+      else if (auto pi = std::get_if<long>(&v)) b = (*pi != 0); // until you enforce Bool in types
+      else throw std::runtime_error("runtime: invalid operand to 'not'");
+      return !b;
+    },
+    // Binary ops
+    [&](const EBinOp& n) -> Val {
+      auto L = n.loc;
+      auto lv = eval(n.lhs, env);
+      // short-circuit And/Or
+      if (n.op == BinOp::And) {
+        bool lb = std::get_if<bool>(&lv) ? *std::get_if<bool>(&lv) : (std::get_if<long>(&lv) && *std::get_if<long>(&lv) != 0);
+        if (!lb) return false;
+        auto rv = eval(n.rhs, env);
+        bool rb = std::get_if<bool>(&rv) ? *std::get_if<bool>(&rv) : (std::get_if<long>(&rv) && *std::get_if<long>(&rv) != 0);
+        return lb && rb;
+      }
+      if (n.op == BinOp::Or) {
+        bool lb = std::get_if<bool>(&lv) ? *std::get_if<bool>(&lv) : (std::get_if<long>(&lv) && *std::get_if<long>(&lv) != 0);
+        if (lb) return true;
+        auto rv = eval(n.rhs, env);
+        bool rb = std::get_if<bool>(&rv) ? *std::get_if<bool>(&rv) : (std::get_if<long>(&rv) && *std::get_if<long>(&rv) != 0);
+        return lb || rb;
+      }
+
+      auto rv = eval(n.rhs, env);
+
+      auto asInt = [&](const Val& v)->long {
+        if (auto p = std::get_if<long>(&v)) return *p;
+        throw std::runtime_error(L.file+":"+std::to_string(L.line)+":"+std::to_string(L.col)+": runtime: expected Int");
+      };
+      long x = asInt(lv), y = asInt(rv);
+
+      switch (n.op) {
+        case BinOp::Add: return x + y;
+        case BinOp::Sub: return x - y;
+        case BinOp::Mul: return x * y;
+        case BinOp::Div: return y == 0 ? 0 /* or throw */ : x / y;
+        case BinOp::Eq:  return x == y;
+        case BinOp::Neq: return x != y;
+        case BinOp::Lt:  return x <  y;
+        case BinOp::Le:  return x <= y;
+        case BinOp::Gt:  return x >  y;
+        case BinOp::Ge:  return x >= y;
+        case BinOp::And:
+        case BinOp::Or:
+          break; // handled earlier
+      }
+      return 0L;
     }
   }, e);
 }

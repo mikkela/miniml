@@ -14,6 +14,15 @@ namespace miniml {
     return L;
   }
 
+  // Helpers to fold left-assoc chains: x op y op z  -> bin(bin(x,y), z)
+  template <typename BuildFn>
+  static ExprPtr fold_left(const std::vector<ExprPtr>& terms, BuildFn build, const SrcLoc& L) {
+    if (terms.empty()) return nullptr;
+    ExprPtr acc = terms.front();
+    for (size_t i = 1; i < terms.size(); ++i) acc = build(acc, terms[i], L);
+    return acc;
+  }
+
   class AstBuilder : public MiniMLBaseVisitor {
   public:
     using Ptr = ExprPtr;
@@ -48,27 +57,99 @@ namespace miniml {
       return Ptr(lam(x, b, L));
     }
 
-    std::any visitAppChain(MiniMLParser::AppChainContext* ctx) override {
-      // location: start of the chain (first atom)
+    // orExpr: andExpr ( '||' andExpr )*
+    std::any visitOrExpr(MiniMLParser::OrExprContext* ctx) override {
       auto L = loc_from(ctx->getStart(), currentFile);
-      Ptr f = asExpr(visit(ctx->atom(0)));
-      for (size_t i = 1; i < ctx->atom().size(); ++i) {
-        Ptr a = asExpr(visit(ctx->atom(i)));
-        // each application node gets the chain start location
-        f = app(f, a, L);
+      std::vector<ExprPtr> terms;
+      for (auto* a : ctx->andExpr()) terms.push_back(asExpr(visit(a)));
+      return fold_left(terms, [&](ExprPtr a, ExprPtr b, const SrcLoc& l){ return binop(BinOp::Or, a, b, l); }, L);
+    }
+
+    // andExpr: eqExpr ( '&&' eqExpr )*
+    std::any visitAndExpr(MiniMLParser::AndExprContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      std::vector<ExprPtr> terms;
+      for (auto* a : ctx->eqExpr()) terms.push_back(asExpr(visit(a)));
+      return fold_left(terms, [&](ExprPtr a, ExprPtr b, const SrcLoc& l){ return binop(BinOp::And, a, b, l); }, L);
+    }
+
+    // eqExpr: relExpr ( ( '=' | '<>' ) relExpr )*
+    std::any visitEqExpr(MiniMLParser::EqExprContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      auto rels = ctx->relExpr();
+      if (rels.size() == 1) return visit(rels[0]);
+      // left-assoc chain with the specific operator token sequence
+      ExprPtr acc = asExpr(visit(rels[0]));
+      // tokens are interleaved; we check text() for simplicity
+      for (size_t i = 1; i < rels.size(); ++i) {
+        std::string op = ctx->children[2*i - 1]->getText();
+        auto rhs = asExpr(visit(rels[i]));
+        BinOp bop = (op == "=") ? BinOp::Eq : BinOp::Neq;
+        acc = binop(bop, acc, rhs, L);
       }
-      return f;
+      return acc;
+    }
+
+    // relExpr: addExpr ( ( '<' | '<=' | '>' | '>=' ) addExpr )*
+    std::any visitRelExpr(MiniMLParser::RelExprContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      auto adds = ctx->addExpr();
+      if (adds.size() == 1) return visit(adds[0]);
+      ExprPtr acc = asExpr(visit(adds[0]));
+      for (size_t i = 1; i < adds.size(); ++i) {
+        std::string op = ctx->children[2*i - 1]->getText();
+        auto rhs = asExpr(visit(adds[i]));
+        BinOp bop =
+          (op == "<")  ? BinOp::Lt :
+          (op == "<=") ? BinOp::Le :
+          (op == ">")  ? BinOp::Gt : BinOp::Ge;
+        acc = binop(bop, acc, rhs, L);
+      }
+      return acc;
+    }
+
+    // addExpr: mulExpr ( ( '+' | '-' ) mulExpr )*
+    std::any visitAddExpr(MiniMLParser::AddExprContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      auto m = ctx->mulExpr();
+      if (m.size() == 1) return visit(m[0]);
+      ExprPtr acc = asExpr(visit(m[0]));
+      for (size_t i = 1; i < m.size(); ++i) {
+        std::string op = ctx->children[2*i - 1]->getText();
+        auto rhs = asExpr(visit(m[i]));
+        BinOp bop = (op == "+") ? BinOp::Add : BinOp::Sub;
+        acc = binop(bop, acc, rhs, L);
+      }
+      return acc;
+    }
+
+    // mulExpr: appExpr ( ( '*' | '/' ) appExpr )*
+    std::any visitMulExpr(MiniMLParser::MulExprContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      auto a = ctx->appExpr();
+      if (a.size() == 1) return visit(a[0]);
+      ExprPtr acc = asExpr(visit(a[0]));
+      for (size_t i = 1; i < a.size(); ++i) {
+        std::string op = ctx->children[2*i - 1]->getText();
+        auto rhs = asExpr(visit(a[i]));
+        BinOp bop = (op == "*") ? BinOp::Mul : BinOp::Div;
+        acc = binop(bop, acc, rhs, L);
+      }
+      return acc;
     }
 
     std::any visitJustAtom(MiniMLParser::JustAtomContext* ctx) override {
       return visit(ctx->atom());
     }
 
+    // atom: INT | TRUE | FALSE | NOT atom | ID | '(' expr ')'
     std::any visitAtom(MiniMLParser::AtomContext* ctx) override {
       auto L = loc_from(ctx->getStart(), currentFile);
-      if (ctx->INT()) return Ptr(lit_int(std::stol(ctx->INT()->getText()), L));
-      if (ctx->ID())  return Ptr(var(ctx->ID()->getText(), L));
-      // '(' expr ')' — propagate inner loc rather than '(' loc:
+      if (ctx->INT())   return Ptr(lit_int(std::stol(ctx->INT()->getText()), L));
+      if (ctx->TRUE())  return Ptr(lit_bool(true,  L));
+      if (ctx->FALSE()) return Ptr(lit_bool(false, L));
+      if (ctx->NOT())   return Ptr(unop(UnOp::Not, asExpr(visit(ctx->atom())), L));
+      if (ctx->ID())    return Ptr(var(ctx->ID()->getText(), L));
       return asExpr(visit(ctx->expr()));
     }
 
