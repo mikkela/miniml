@@ -8,7 +8,7 @@
 namespace miniml {
 
     /// Type environment: name -> type (monomorphic for Step 1)
-    using TypeEnv = std::unordered_map<std::string, TypePtr>;
+    using TypeEnv = std::unordered_map<std::string, TypeScheme>;
 
     struct InferResult {
         TypePtr type;

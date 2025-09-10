@@ -1,100 +1,120 @@
 #pragma once
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
+#include <vector>
+#include <stdexcept>
 
 namespace miniml {
-  // --- Type kinds
-  enum class TKind { INT, BOOL, VAR, FUN };
 
-  // Forward declaration
-  struct Type;
-  using TypePtr = std::shared_ptr<Type>;
+// ---------- Type core ----------
+enum class TKind { INT, BOOL, VAR, FUN };
 
-  // --- Type representation
-  struct Type {
-    TKind k;
+struct Type;
+using TypePtr = std::shared_ptr<Type>;
 
-    // For VAR
-    struct Var { int id; };
-    // For FUN
-    struct Fun { TypePtr a; TypePtr b; };
+struct Type {
+  TKind k;
 
-    union {
-      Var v;
-      Fun f;
-    };
+  struct Var { int id; };
+  struct Fun { TypePtr a; TypePtr b; };
 
-    // Constructors
-    explicit Type(TKind kind) : k(kind) {
-      if (k == TKind::VAR) v = Var{-1};
-      if (k == TKind::FUN) f = Fun{nullptr,nullptr};
-    }
-
-    // Need manual destructor (union with non-trivial types)
-    ~Type() {}
-
-    // Factories
-    static TypePtr tInt()  { return std::make_shared<Type>(TKind::INT); }
-    static TypePtr tBool() { return std::make_shared<Type>(TKind::BOOL); }
-    static TypePtr tVar(int id) {
-      auto t = std::make_shared<Type>(TKind::VAR);
-      t->v.id = id;
-      return t;
-    }
-    static TypePtr tFun(TypePtr a, TypePtr b) {
-      auto t = std::make_shared<Type>(TKind::FUN);
-      t->f.a = a;
-      t->f.b = b;
-      return t;
-    }
+  union {
+    Var v;
+    Fun f;
   };
 
-  // --- Substitution: mapping type variable IDs to Types
-  struct Subst {
-    std::unordered_map<int, TypePtr> m;
+  explicit Type(TKind kind) : k(kind) {
+    if (k == TKind::VAR) v = Var{-1};
+    if (k == TKind::FUN) f = Fun{nullptr, nullptr};
+  }
 
-    // Apply substitution to a type
-    TypePtr apply(TypePtr t) const {
-      if (!t) return t;
-      switch (t->k) {
-        case TKind::INT:
-        case TKind::BOOL:
-          return t;
+  ~Type() {} // (forenkl. layout; vi allokerer nye FUN-noder når vi ændrer)
 
-        case TKind::VAR: {
-          auto it = m.find(t->v.id);
-          if (it != m.end()) {
-            return apply(it->second); // recursive apply
-          }
-          return t;
-        }
+  static TypePtr tInt()  { return std::make_shared<Type>(TKind::INT); }
+  static TypePtr tBool() { return std::make_shared<Type>(TKind::BOOL); }
+  static TypePtr tVar(int id) {
+    auto t = std::make_shared<Type>(TKind::VAR);
+    t->v.id = id;
+    return t;
+  }
+  static TypePtr tFun(TypePtr a, TypePtr b) {
+    auto t = std::make_shared<Type>(TKind::FUN);
+    t->f.a = std::move(a);
+    t->f.b = std::move(b);
+    return t;
+  }
+};
 
-        case TKind::FUN: {
-          auto a = apply(t->f.a);
-          auto b = apply(t->f.b);
-          if (a == t->f.a && b == t->f.b) {
-            return t; // unchanged
-          }
-          return Type::tFun(a, b);
-        }
+// ---------- Substitution ----------
+struct Subst {
+  std::unordered_map<int, TypePtr> m;
+
+  TypePtr apply(TypePtr t) const {
+    if (!t) return t;
+    switch (t->k) {
+      case TKind::INT:
+      case TKind::BOOL:
+        return t;
+      case TKind::VAR: {
+        auto it = m.find(t->v.id);
+        if (it != m.end()) return apply(it->second);
+        return t;
       }
-      return t; // unreachable
+      case TKind::FUN: {
+        auto a = apply(t->f.a);
+        auto b = apply(t->f.b);
+        if (a == t->f.a && b == t->f.b) return t;
+        return Type::tFun(a, b);
+      }
     }
+    return t;
+  }
 
-    // Compose with another substitution (apply s2 then this)
-    void compose(const Subst& s2) {
-      for (auto& kv : m) {
-        kv.second = s2.apply(kv.second);
-      }
-      for (auto& kv : s2.m) {
-        m[kv.first] = kv.second;
-      }
-    }
-  };
+  void compose(const Subst& s2) {
+    // apply s2 to all current images
+    for (auto& kv : m) kv.second = s2.apply(kv.second);
+    // then union (s2 overrides)
+    for (auto& kv : s2.m) m[kv.first] = kv.second;
+  }
+};
 
-  // --- Type errors (shared between Unify and Infer)
-  struct TypeError : std::runtime_error {
-    using std::runtime_error::runtime_error;
-  };
+// ---------- Shared error ----------
+struct TypeError : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
+
+// ---------- Polymorphic schemes (∀ quant. body) ----------
+struct TypeScheme {
+  std::vector<int> quant; // kvantificerede TVar-ids
+  TypePtr body;           // monotype-krop
+};
+
+// FTV for Type
+inline void ftv(const TypePtr& t, std::unordered_set<int>& out) {
+  if (!t) return;
+  switch (t->k) {
+    case TKind::INT:
+    case TKind::BOOL: return;
+    case TKind::VAR:  out.insert(t->v.id); return;
+    case TKind::FUN:  ftv(t->f.a, out); ftv(t->f.b, out); return;
+  }
+}
+
+// FTV for Scheme = ftv(body) \ quant
+inline std::unordered_set<int> ftv(const TypeScheme& s) {
+  std::unordered_set<int> r;
+  ftv(s.body, r);
+  for (int q : s.quant) r.erase(q);
+  return r;
+}
+
+// Subst på Scheme: maskér kvantificerede variabler
+inline TypeScheme apply(const Subst& s, const TypeScheme& sc) {
+  Subst masked = s;
+  for (int q : sc.quant) masked.m.erase(q);
+  return TypeScheme{ sc.quant, masked.apply(sc.body) };
+}
+
 } // namespace miniml

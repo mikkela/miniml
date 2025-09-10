@@ -1,19 +1,13 @@
 #include "Infer.hpp"
+#include "Scheme.hpp"
 #include <sstream>
 #include <variant>
 
 namespace miniml {
-
-  static int fresh_counter = 0;
-  static TypePtr freshTVar() { return Type::tVar(fresh_counter++); }
-
   template<class... Ts>
   struct overloaded : Ts... { using Ts::operator()...; };
   template<class... Ts>
   overloaded(Ts...) -> overloaded<Ts...>;
-
-  // rename to avoid clash with std::apply
-  static TypePtr applySubst(const Subst& s, TypePtr t) { return s.apply(t); }
 
   // Compose s2 after s1 (apply s2, then s1)
   static Subst compose(Subst s1, const Subst& s2) { s1.compose(s2); return s1; }
@@ -30,7 +24,7 @@ namespace miniml {
       throw TypeError(loc.file + ":" + std::to_string(loc.line) + ":" +
                       std::to_string(loc.col) + ": unbound variable '" + x + "' in type phase");
     }
-    return it->second;
+    return instantiate(it->second);
   }
 
   static InferResult infer_expr(const Expr& e, TypeEnv& gamma) {
@@ -53,11 +47,11 @@ namespace miniml {
 
       // Lambda
       [&](const ELam& n) -> InferResult {
-        auto a = freshTVar();
+        auto a = Type::tVar(freshTypeVarId());
         TypeEnv gamma2 = gamma;
-        gamma2[n.param] = a;
+        gamma2[n.param] = TypeScheme{ /*quant*/{}, /*body*/ a };  // monomorf binding
         auto r = infer_expr(*n.body, gamma2);
-        auto fun = Type::tFun(applySubst(r.subst, a), r.type);
+        auto fun = Type::tFun(r.subst.apply(a), r.type);
         return { fun, r.subst };
       },
 
@@ -65,10 +59,10 @@ namespace miniml {
       [&](const EApp& n) -> InferResult {
         auto f = infer_expr(*n.fn,  gamma);
         auto a = infer_expr(*n.arg, gamma);
-        auto b = freshTVar();
+        auto b = Type::tVar(freshTypeVarId());
 
         // unify f.type with (a.type -> b)
-        auto u = unify(applySubst(a.subst, f.type),
+        auto u = unify(a.subst.apply(f.type),
                        Type::tFun(a.type, b),
                        n.loc);
 
@@ -77,14 +71,17 @@ namespace miniml {
         s.compose(a.subst);
         s.compose(u);
 
-        return { applySubst(s, b), s };
+        return { s.apply(b), s };
       },
 
       // Let (non-recursive, monomorphic)
       [&](const ELet& n) -> InferResult {
         auto r1 = infer_expr(*n.rhs, gamma);
-        TypeEnv gamma2 = gamma;
-        gamma2[n.name] = applySubst(r1.subst, r1.type);
+        TypeEnv gamma1 = miniml::apply(r1.subst, gamma);
+        auto t1 = r1.subst.apply(r1.type);
+        auto sigma = generalize(gamma1, t1); // generalize here for future use
+        TypeEnv gamma2 = gamma1;
+        gamma2[n.name] = sigma;
         auto r2 = infer_expr(*n.body, gamma2);
 
         Subst s = {};
@@ -105,12 +102,12 @@ namespace miniml {
         auto rt = infer_expr(*n.thenE, gamma);
         auto re = infer_expr(*n.elseE, gamma);
 
-        auto u2 = unify(applySubst(s, rt.type), applySubst(s, re.type), n.loc);
+        auto u2 = unify(s.apply(rt.type), s.apply(re.type), n.loc);
         s.compose(rt.subst);
         s.compose(re.subst);
         s.compose(u2);
 
-        return { applySubst(s, rt.type), s };
+        return { s.apply(rt.type), s };
       },
 
       // Unary 'not'
@@ -138,9 +135,9 @@ namespace miniml {
           Subst s{};
           s.compose(l.subst);
           s.compose(r.subst);
-          auto u1 = unify(applySubst(s, l.type), tl, L);
+          auto u1 = unify(s.apply(l.type), tl, L);
           s.compose(u1);
-          auto u2 = unify(applySubst(s, r.type), tr, L);
+          auto u2 = unify(s.apply(r.type), tr, L);
           s.compose(u2);
           return { tres, s };
         };

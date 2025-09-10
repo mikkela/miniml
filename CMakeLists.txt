@@ -47,10 +47,13 @@ add_library(miniml STATIC
 
         # Types
         src/types/Type.hpp
+        src/types/Scheme.hpp
+        src/types/Scheme.cpp
         src/types/Unify.hpp
         src/types/Infer.hpp
         src/types/Unify.cpp
         src/types/Infer.cpp
+
 
         # IR (if present)
         #src/ir/IR.hpp
