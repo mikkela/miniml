@@ -1,52 +1,100 @@
 #pragma once
 #include <memory>
-#include <optional>
-#include <string>
 #include <unordered_map>
-#include <vector>
-#include <sstream>
+#include <string>
 
 namespace miniml {
+  // --- Type kinds
+  enum class TKind { INT, BOOL, VAR, FUN };
 
-struct Type;
-using TypePtr = std::shared_ptr<Type>;
+  // Forward declaration
+  struct Type;
+  using TypePtr = std::shared_ptr<Type>;
 
-enum class TKind { INT, BOOL, VAR, FUN };
-
-struct TVar { int id; };
-struct TFun { TypePtr a, b; };
-
-struct Type {
+  // --- Type representation
+  struct Type {
     TKind k;
-    TVar  v{};
-    TFun  f{};
 
-    static TypePtr tInt() { return std::make_shared<Type>(TKind::INT); }
-    static TypePtr tBool(){ return std::make_shared<Type>(TKind::BOOL); }
-    static TypePtr tVar(int id){ Type t(TKind::VAR); t.v = TVar{id}; return std::make_shared<Type>(t); }
-    static TypePtr tFun(TypePtr a, TypePtr b){ Type t(TKind::FUN); t.f = TFun{std::move(a), std::move(b)}; return std::make_shared<Type>(t); }
+    // For VAR
+    struct Var { int id; };
+    // For FUN
+    struct Fun { TypePtr a; TypePtr b; };
 
-    explicit Type(TKind k): k(k) {}
+    union {
+      Var v;
+      Fun f;
+    };
 
-    std::string str() const {
-        switch (k) {
-            case TKind::INT: return "Int";
-            case TKind::BOOL: return "Bool";
-            case TKind::VAR: return "'" + std::to_string(v.id);
-            case TKind::FUN: {
-                std::ostringstream os;
-                os << "(" << f.a->str() << " -> " << f.b->str() << ")";
-                return os.str();
-            }
-        }
-        return "?";
+    // Constructors
+    explicit Type(TKind kind) : k(kind) {
+      if (k == TKind::VAR) v = Var{-1};
+      if (k == TKind::FUN) f = Fun{nullptr,nullptr};
     }
-};
 
-struct Subst {
+    // Need manual destructor (union with non-trivial types)
+    ~Type() {}
+
+    // Factories
+    static TypePtr tInt()  { return std::make_shared<Type>(TKind::INT); }
+    static TypePtr tBool() { return std::make_shared<Type>(TKind::BOOL); }
+    static TypePtr tVar(int id) {
+      auto t = std::make_shared<Type>(TKind::VAR);
+      t->v.id = id;
+      return t;
+    }
+    static TypePtr tFun(TypePtr a, TypePtr b) {
+      auto t = std::make_shared<Type>(TKind::FUN);
+      t->f.a = a;
+      t->f.b = b;
+      return t;
+    }
+  };
+
+  // --- Substitution: mapping type variable IDs to Types
+  struct Subst {
     std::unordered_map<int, TypePtr> m;
-    TypePtr apply(TypePtr t) const;
-    void compose(const Subst& s);
-};
 
+    // Apply substitution to a type
+    TypePtr apply(TypePtr t) const {
+      if (!t) return t;
+      switch (t->k) {
+        case TKind::INT:
+        case TKind::BOOL:
+          return t;
+
+        case TKind::VAR: {
+          auto it = m.find(t->v.id);
+          if (it != m.end()) {
+            return apply(it->second); // recursive apply
+          }
+          return t;
+        }
+
+        case TKind::FUN: {
+          auto a = apply(t->f.a);
+          auto b = apply(t->f.b);
+          if (a == t->f.a && b == t->f.b) {
+            return t; // unchanged
+          }
+          return Type::tFun(a, b);
+        }
+      }
+      return t; // unreachable
+    }
+
+    // Compose with another substitution (apply s2 then this)
+    void compose(const Subst& s2) {
+      for (auto& kv : m) {
+        kv.second = s2.apply(kv.second);
+      }
+      for (auto& kv : s2.m) {
+        m[kv.first] = kv.second;
+      }
+    }
+  };
+
+  // --- Type errors (shared between Unify and Infer)
+  struct TypeError : std::runtime_error {
+    using std::runtime_error::runtime_error;
+  };
 } // namespace miniml

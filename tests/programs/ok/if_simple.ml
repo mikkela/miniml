@@ -1,0 +1,1 @@
+if (\x -> x) 1 then 1 else 0

@@ -1,34 +1,55 @@
 #include <iostream>
-#include "ast/Nodes.hpp"
-#include "types/TypeCheck.hpp"
-#include "ir/IR.hpp"
+#include <fstream>
+#include <sstream>
+#include <string>
+#include "parser/parse_to_ast.hpp"
+#include "semantic/ScopeCheck.hpp"   // hvis du valgte mappen "semantic/"
+#include "types/Infer.hpp"           // infer(...) + showType(...)
+#include "types/Type.hpp"
+// (ellers "scope/ScopeCheck.hpp")
+
+static std::string readAll(const char* path) {
+    std::ifstream in(path);
+    if (!in) throw std::runtime_error(std::string("Cannot open file: ") + path);
+    std::ostringstream ss; ss << in.rdbuf(); return ss.str();
+}
 
 int main(int argc, char** argv) {
-    using namespace miniml;
-
-    // Example program: let id = \x -> x in id 42
-    ExprPtr idLam = lam("x", var("x"));
-    ExprPtr prog = let_("id", idLam, app(var("id"), lit_int(42)));
-
-    TypeEnv tenv;
-    InferState st;
-    auto ty = infer(tenv, st, *prog);
-
-    std::cout << "Type of program: " << ty->str() << "\n";
-
-    // Lower to simple IR
-    IRProgram ir;
-    IRBuilder irb(ir);
-    auto v = irb.gen(*prog);
-    irb.bind(v, IRValue::Imm(0)); // placeholder write to last tmp
-    irb.emit(IRInstr{IROp::RET, v, IRValue{}});
-
-    std::cout << "\n=== IR ===\n";
-    for (auto& f : ir.funcs) {
-        std::cout << "func " << f.name << ":\n";
-        for (auto& ins : f.body) {
-            std::cout << "  " << ins.str() << "\n";
+    try {
+        std::string filename = "<stdin>";
+        std::string code;
+        if (argc > 1) {
+            filename = argv[1];
+            code = readAll(argv[1]);
+        } else {
+            // fallback-program hvis ingen fil gives
+            code = "let id = \\x -> x in id 42";
         }
+
+        // 1) Parse → AST (med kildelokationer)
+        auto ast = miniml::parse_to_ast(code, filename);
+
+        // 2) Navneresolution / scope-check
+        miniml::ScopeConfig cfg;
+        cfg.warn_on_shadow = true;
+        cfg.on_warning = [](const std::string& msg){ std::cerr << "warning: " << msg << "\n"; };
+
+        miniml::ScopeChecker checker(cfg);
+        checker.check(ast);
+
+        // 3) Type inference (HM-lite, monomorphic let for now)
+        miniml::TypeEnv gamma;        // add prelude bindings here later, if any
+        auto ir = miniml::infer(ast, gamma);
+
+        std::cout << "OK: parsed + scope-checked " << filename << "\n";
+        std::cout << "Type: " << miniml::showType(ir.type) << "\n";
+        return 0;
+
+    } catch (const miniml::TypeError& e) {     // type errors (from unify/infer)
+        std::cerr << "Type error: " << e.what() << "\n";
+        return 2;
+    }catch (const std::exception& e) {
+        std::cerr << "ERROR: " << e.what() << "\n";
+        return 1;
     }
-    return 0;
 }

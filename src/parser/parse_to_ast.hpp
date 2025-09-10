@@ -2,7 +2,6 @@
 #include <string>
 #include <memory>
 #include <any>
-#include "MiniMLBaseVisitor.h"
 #include <antlr4-runtime.h>
 #include "StrictErrorListener.hpp"
 #include "MiniMLLexer.h"

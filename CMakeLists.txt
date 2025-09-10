@@ -43,23 +43,27 @@ endif()
 add_library(miniml STATIC
         # AST
         src/ast/Nodes.hpp
+        src/ast/PrettyLoc.hpp
 
         # Types
         src/types/Type.hpp
-        src/types/Type.cpp
-        #src/types/TypeEnv.hpp
-        src/types/TypeCheck.hpp
-        #src/types/TypeCheck.cpp
         src/types/Unify.hpp
+        src/types/Infer.hpp
+        src/types/Unify.cpp
+        src/types/Infer.cpp
 
         # IR (if present)
-        src/ir/IR.hpp
+        #src/ir/IR.hpp
         #src/ir/IR.cpp
 
-        # Parser glue (new)
+        # Parser glue
         src/parser/StrictErrorListener.hpp
         src/parser/AstBuilder.hpp
         src/parser/parse_to_ast.hpp
+
+        #semantic analysis
+        src/semantic/EnvStack.hpp
+        src/semantic/ScopeCheck.hpp
 )
 
 target_include_directories(miniml PUBLIC src)
@@ -205,6 +209,9 @@ if (ENABLE_ANTLR)
   endif()
 endif()
 
+# main CLI (driver that runs parser + scope checker)
+add_executable(minimlc src/main.cpp)
+target_link_libraries(minimlc PRIVATE miniml)
 # ----------------------------
 # CLI tools (optional)
 # ----------------------------
