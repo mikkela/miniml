@@ -1,0 +1,1 @@
+let id = \x -> x in id 42            (* Value: 42 *)

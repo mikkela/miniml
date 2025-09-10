@@ -1,0 +1,1 @@
+let k = \x -> \y -> x in k 10 20     (* Value: 10 *)

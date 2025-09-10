@@ -64,6 +64,11 @@ add_library(miniml STATIC
         #semantic analysis
         src/semantic/EnvStack.hpp
         src/semantic/ScopeCheck.hpp
+
+        # Evaluator
+        src/evaluator/Value.hpp
+        src/evaluator/Eval.hpp
+        src/evaluator/Eval.cpp
 )
 
 target_include_directories(miniml PUBLIC src)

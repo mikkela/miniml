@@ -6,6 +6,7 @@
 #include "semantic/ScopeCheck.hpp"   // hvis du valgte mappen "semantic/"
 #include "types/Infer.hpp"           // infer(...) + showType(...)
 #include "types/Type.hpp"
+#include "evaluator/Eval.hpp"       // eval(...) + showVal(...)
 // (ellers "scope/ScopeCheck.hpp")
 
 static std::string readAll(const char* path) {
@@ -43,6 +44,11 @@ int main(int argc, char** argv) {
 
         std::cout << "OK: parsed + scope-checked " << filename << "\n";
         std::cout << "Type: " << miniml::showType(ir.type) << "\n";
+
+        // after type inference:
+        auto v = miniml::eval(ast, miniml::prelude());
+        std::cout << "Value: " << miniml::showVal(v) << "\n";
+
         return 0;
 
     } catch (const miniml::TypeError& e) {     // type errors (from unify/infer)
