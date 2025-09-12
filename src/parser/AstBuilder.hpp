@@ -161,6 +161,19 @@ namespace miniml {
       return Ptr(lit_tuple(tuples, L));
     }
 
+    std::any visitAppChain(MiniMLParser::AppChainContext* ctx) override {
+      auto L = loc_from(ctx->getStart(), currentFile);
+      std::vector<ExprPtr> terms;
+      terms.reserve(ctx->atom().size());
+      for (auto* a : ctx->atom()) terms.push_back(asExpr(visit(a)));
+
+      // left-assoc: (((t0 t1) t2) ... tn)
+      ExprPtr acc = terms.front();
+      for (size_t i = 1; i < terms.size(); ++i) {
+        acc = app(acc, terms[i], L);
+      }
+      return acc;
+    }
   private:
     static Ptr asExpr(const std::any& a) {
       if (!a.has_value()) return nullptr;
