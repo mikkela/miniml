@@ -1,5 +1,6 @@
 #include "Eval.hpp"
 #include <stdexcept>
+#include "../utils/vector_utils.hpp"
 
 namespace miniml {
 
@@ -7,6 +8,33 @@ static Val eval1(const Expr& e, std::shared_ptr<EnvV> env);
 
 Val eval(const ExprPtr& e, std::shared_ptr<EnvV> env) {
   return eval1(*e, std::move(env));
+}
+
+bool compareVals(const Val& a, const Val& b, const SrcLoc& loc) {
+  if (auto pa = std::get_if<long>(&a)) {
+    if (auto pb = std::get_if<long>(&b)) return *pa == *pb;
+    throw std::runtime_error(loc.file+":"+std::to_string(loc.line)+":"+std::to_string(loc.col)+": runtime: expected Int");
+  } else if (auto pa = std::get_if<bool>(&a)) {
+    if (auto pb = std::get_if<bool>(&b)) return *pa == *pb;
+    throw std::runtime_error(loc.file+":"+std::to_string(loc.line)+":"+std::to_string(loc.col)+": runtime: expected Int");
+  } else if (auto pa = std::get_if<std::shared_ptr<Tuple>>(&a)) {
+    if (auto pb = std::get_if<std::shared_ptr<Tuple>>(&b)) {
+      if ((*pa)->elements.size() != (*pb)->elements.size())
+        throw std::runtime_error(loc.file+":"+std::to_string(loc.line)+":"+std::to_string(loc.col)+": runtime: expected Tuples of same size");
+      for (size_t i = 0; i < (*pa)->elements.size(); ++i) {
+        if (!compareVals((*pa)->elements[i], (*pb)->elements[i], loc)) return false;
+      }
+      return true;
+    }
+    throw std::runtime_error(loc.file+":"+std::to_string(loc.line)+":"+std::to_string(loc.col)+": runtime: expected Tuple");
+  } else if (auto pa = std::get_if<std::shared_ptr<Closure>>(&a)) {
+    if (auto pb = std::get_if<std::shared_ptr<Closure>>(&b)) {
+      // Closures are equal if they are the same object (pointer equality)
+      return pa->get() == pb->get();
+    }
+    throw std::runtime_error(loc.file+":"+std::to_string(loc.line)+":"+std::to_string(loc.col)+": runtime: expected Function");
+  }
+  return false; // different types
 }
 
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
@@ -23,6 +51,16 @@ static Val eval1(const Expr& e, std::shared_ptr<EnvV> env) {
     },
     [&](const ELitInt& n) -> Val { return static_cast<long>(n.value); },
     [&](const ELitBool& n) -> Val { return static_cast<bool>(n.value); },
+    [&](const ELitTuple& n) -> Val {
+      std::vector<Val> values;
+      values.reserve(n.elems.size());
+
+      std::transform(n.elems.begin(), n.elems.end(),
+                   std::back_inserter(values),
+                   [&](const ExprPtr& e) { return eval(e, env); });
+
+      return std::make_shared<Tuple>(Tuple{std::move(values)});
+    },
     [&](const ELam& n) -> Val {
       return std::make_shared<Closure>(Closure{n.param, n.body, env});
     },
@@ -67,6 +105,7 @@ static Val eval1(const Expr& e, std::shared_ptr<EnvV> env) {
     [&](const EBinOp& n) -> Val {
       auto L = n.loc;
       auto lv = eval(n.lhs, env);
+
       // short-circuit And/Or
       if (n.op == BinOp::And) {
         bool lb = std::get_if<bool>(&lv) ? *std::get_if<bool>(&lv) : (std::get_if<long>(&lv) && *std::get_if<long>(&lv) != 0);
@@ -82,13 +121,18 @@ static Val eval1(const Expr& e, std::shared_ptr<EnvV> env) {
         bool rb = std::get_if<bool>(&rv) ? *std::get_if<bool>(&rv) : (std::get_if<long>(&rv) && *std::get_if<long>(&rv) != 0);
         return lb || rb;
       }
+      if (n.op == BinOp::Eq || n.op == BinOp::Neq) {
+        auto rv = eval(n.rhs, env);
+        bool eq = compareVals(lv, rv, L);
+        return n.op == BinOp::Eq ? eq : !eq;
+      }
 
       auto rv = eval(n.rhs, env);
-
       auto asInt = [&](const Val& v)->long {
-        if (auto p = std::get_if<long>(&v)) return *p;
-        throw std::runtime_error(L.file+":"+std::to_string(L.line)+":"+std::to_string(L.col)+": runtime: expected Int");
-      };
+              if (auto p = std::get_if<long>(&v)) return *p;
+              throw std::runtime_error(L.file+":"+std::to_string(L.line)+":"+std::to_string(L.col)+": runtime: expected Int");
+            };
+
       long x = asInt(lv), y = asInt(rv);
 
       switch (n.op) {
@@ -96,12 +140,12 @@ static Val eval1(const Expr& e, std::shared_ptr<EnvV> env) {
         case BinOp::Sub: return x - y;
         case BinOp::Mul: return x * y;
         case BinOp::Div: return y == 0 ? 0 /* or throw */ : x / y;
-        case BinOp::Eq:  return x == y;
-        case BinOp::Neq: return x != y;
         case BinOp::Lt:  return x <  y;
         case BinOp::Le:  return x <= y;
         case BinOp::Gt:  return x >  y;
         case BinOp::Ge:  return x >= y;
+        case BinOp::Eq:
+        case BinOp::Neq:
         case BinOp::And:
         case BinOp::Or:
           break; // handled earlier
@@ -115,6 +159,16 @@ std::string showVal(const Val& v) {
   if (auto i = std::get_if<long>(&v))  return std::to_string(*i);
   if (auto b = std::get_if<bool>(&v))  return *b ? "true" : "false";
   if (std::get_if<std::shared_ptr<Closure>>(&v)) return "<fun>";
+  if (std::get_if<std::shared_ptr<Tuple>>(&v)) {
+    auto t = std::get<std::shared_ptr<Tuple>>(v);
+    std::string s = "(";
+    for (size_t i = 0; i < t->elements.size(); ++i) {
+      if (i > 0) s += ", ";
+      s += showVal(t->elements[i]);
+    }
+    s += ")";
+    return s;
+  }
   return "<unknown>";
 }
 

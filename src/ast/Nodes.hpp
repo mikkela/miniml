@@ -13,9 +13,10 @@ namespace miniml {
     };
 
     // Forward-declare
-    struct EVar; struct ELitInt; struct ELitBool; struct ELam; struct EApp; struct ELet; struct EIf; struct EUnOp; struct EBinOp;
+    struct EVar; struct ELitInt; struct ELitBool; struct ELitTuple;
+    struct ELam; struct EApp; struct ELet; struct EIf; struct EUnOp; struct EBinOp;
 
-    using Expr = std::variant<EVar, ELitInt, ELitBool, ELam, EApp, ELet, EIf, EUnOp, EBinOp>;
+    using Expr = std::variant<EVar, ELitInt, ELitBool, ELitTuple, ELam, EApp, ELet, EIf, EUnOp, EBinOp>;
     using ExprPtr = std::shared_ptr<Expr>;
 
     // Helper to construct shared_ptr
@@ -38,6 +39,11 @@ namespace miniml {
     struct ELitBool {
         SrcLoc loc;
         bool value;
+    };
+    // A tuple literal
+    struct ELitTuple {
+        SrcLoc loc;
+        std::vector<ExprPtr> elems;
     };
     // A lambda/function with one parameter. (Currying means multi-arg functions are nested lambdas.)
     struct ELam {
@@ -93,4 +99,6 @@ namespace miniml {
     inline ExprPtr if_(ExprPtr c, ExprPtr t, ExprPtr e, SrcLoc loc)      { return make_expr<EIf>(loc, std::move(c), std::move(t), std::move(e)); }
     inline ExprPtr unop(UnOp op, ExprPtr e, SrcLoc loc) { return make_expr<EUnOp>(loc, op, std::move(e)); }
     inline ExprPtr binop(BinOp op, ExprPtr l, ExprPtr r, SrcLoc loc) { return make_expr<EBinOp>(loc, op, std::move(l), std::move(r)); }
+    inline ExprPtr lit_tuple(std::vector<ExprPtr> t, SrcLoc loc) { return make_expr<ELitTuple>(loc, std::move(t)); }
+
 } // namespace miniml

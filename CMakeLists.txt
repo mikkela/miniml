@@ -41,19 +41,24 @@ endif()
 
 # --- Core target (explicit file list) ---
 add_library(miniml STATIC
+        # utils
+        src/utils/vector_utils.hpp
+
         # AST
         src/ast/Nodes.hpp
         src/ast/PrettyLoc.hpp
 
         # Types
         src/types/Type.hpp
+        src/types/Type.cpp
         src/types/Scheme.hpp
         src/types/Scheme.cpp
         src/types/Unify.hpp
-        src/types/Infer.hpp
         src/types/Unify.cpp
+        src/types/Subst.hpp
+        src/types/Subst.cpp
+        src/types/Infer.hpp
         src/types/Infer.cpp
-
 
         # IR (if present)
         #src/ir/IR.hpp

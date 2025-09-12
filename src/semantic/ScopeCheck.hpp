@@ -62,6 +62,7 @@ private:
       },
       [&](const ELitInt&) { /* ok */ },
       [&](const ELitBool&) { /* ok */ },
+      [&](const ELitTuple&) { /* ok */ },
       [&](const ELam& n) {
         env_.push();
         bind_with_warning(n.param, n.loc);

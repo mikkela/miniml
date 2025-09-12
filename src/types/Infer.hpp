@@ -1,25 +1,22 @@
 #pragma once
-#include <unordered_map>
-#include <string>
+#include <utility>
 #include "../ast/Nodes.hpp"
-#include "Type.hpp"
+#include "Scheme.hpp"
+#include "Subst.hpp"
 #include "Unify.hpp"
 
 namespace miniml {
 
-    /// Type environment: name -> type (monomorphic for Step 1)
-    using TypeEnv = std::unordered_map<std::string, TypeScheme>;
+  struct InferResult {
+    Subst subst;
+    TypePtr type;
+  };
 
-    struct InferResult {
-        TypePtr type;
-        Subst   subst;
-    };
+// Infer type of expression under environment 'gamma'.
+// Returns {S, T} such that S ∘ gamma ⊢ expr : T
+  InferResult infer(const Expr& expr, const TypeEnv& gamma);
 
-    /// Infer the type of an expression under environment Γ.
-    /// Step 1: monomorphic let (no generalization).
-    InferResult infer(const ExprPtr& e, TypeEnv& gamma);
-
-    /// Pretty print a type (Int, Bool, a0, a1, (t1 -> t2)) — helpful for CLI/tests.
-    std::string showType(const TypePtr& t);
-
+  inline InferResult infer(const std::shared_ptr<Expr>& expr, const TypeEnv& gamma) {
+    return infer(*expr, gamma);
+  }
 } // namespace miniml

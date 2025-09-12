@@ -1,15 +1,48 @@
 #include "Scheme.hpp"
+#include "Subst.hpp"
 #include <atomic>
+#include <algorithm>
 
 namespace miniml {
 
     // ------- fresh TVar supply -------
     static std::atomic<int> g_fresh{0};
-    int freshTypeVarId() {
-        return g_fresh++;
+    int freshTypeVarId() { return g_fresh++; }
+
+    // ------- ftv over Type -------
+    static void ftvTypeRec(const TypePtr& t, std::unordered_set<int>& out) {
+        if (!t) return;
+        switch (t->k) {
+            case TKind::INT:
+            case TKind::BOOL:
+              return;
+            case TKind::VAR:
+                out.insert(t->v.id);
+                return;
+            case TKind::FUN:
+                ftvTypeRec(t->f.a, out);
+                ftvTypeRec(t->f.b, out);
+                return;
+            case TKind::TUPLE:
+                for (auto& e : t->tupleElems) ftvTypeRec(e, out);
+                return;
+        }
     }
 
-    // ------- env FTV -------
+    std::unordered_set<int> ftv(const TypePtr& t) {
+        std::unordered_set<int> r;
+        ftvTypeRec(t, r);
+        return r;
+    }
+
+    // ------- ftv over Scheme -------
+    std::unordered_set<int> ftv(const TypeScheme& s) {
+        auto r = ftv(s.body);
+        for (int q : s.quant) r.erase(q);
+        return r;
+    }
+
+    // ------- ftv over Env -------
     std::unordered_set<int> ftv(const TypeEnv& gamma) {
         std::unordered_set<int> r;
         for (auto& [_, sigma] : gamma) {
@@ -19,37 +52,26 @@ namespace miniml {
         return r;
     }
 
-    // ------- instantiate(∀.body) -------
+    // ------- instantiate -------
     TypePtr instantiate(const TypeScheme& sigma) {
-        // byg en substitution q -> freshVar()
+        // Create a substitution mapping each quantified var to a fresh tvar
         Subst s;
         for (int q : sigma.quant) {
-            s.m[q] = Type::tVar(freshTypeVarId());
+            s.m.emplace(q, Type::tVar(freshTypeVarId()));
         }
         return s.apply(sigma.body);
     }
 
-    // ------- generalize(Gamma, t) : ∀(ftv(t)\ftv(Gamma)). t -------
+    // ------- generalize -------
     TypeScheme generalize(const TypeEnv& gamma, TypePtr t) {
-        std::unordered_set<int> ft_t;  ftv(t, ft_t);
-        std::unordered_set<int> ft_g = ftv(gamma);
-
+        auto ftv_t = ftv(t);
+        auto ftv_g = ftv(gamma);
         std::vector<int> quant;
-        quant.reserve(ft_t.size());
-        for (int v : ft_t) {
-            if (ft_g.find(v) == ft_g.end()) quant.push_back(v);
+        quant.reserve(ftv_t.size());
+        for (int v : ftv_t) {
+            if (!ftv_g.count(v)) quant.push_back(v);
         }
         return TypeScheme{ std::move(quant), std::move(t) };
-    }
-
-    // ------- apply(Subst, Env) -------
-    TypeEnv apply(const Subst& s, const TypeEnv& gamma) {
-        TypeEnv out;
-        out.reserve(gamma.size());
-        for (auto& [name, sigma] : gamma) {
-            out.emplace(name, apply(s, sigma)); // bruger apply(Subst, TypeScheme) fra Type.hpp
-        }
-        return out;
     }
 
 } // namespace miniml

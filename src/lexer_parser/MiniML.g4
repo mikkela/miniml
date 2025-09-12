@@ -29,7 +29,14 @@ atom        : INT
             | FALSE
             | NOT atom
             | ID
-            | LPAREN expr RPAREN
+            | parenExpr
+            | tupleLiteral
+            ;
+
+parenExpr   : LPAREN expr RPAREN
+            ;
+
+tupleLiteral: LPAREN expr COMMA expr (COMMA expr)* RPAREN
             ;
 
 LET         : 'let' ;
@@ -60,6 +67,7 @@ SLASH       : '/';
 // Delimiters
 LPAREN      : '(' ;
 RPAREN      : ')' ;
+COMMA       : ',' ;
 
 // Identifiers & literals
 ID          : [a-zA-Z_][a-zA-Z0-9_]* ;

@@ -1,14 +1,17 @@
 #pragma once
 #include <memory>
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include <variant>
 #include "../ast/Nodes.hpp"
 
 namespace miniml {
-
-    struct Value;
-    using Val = std::variant<long, bool, std::shared_ptr<struct Closure>>;
+    using Val = std::variant<
+        long,
+        bool,
+        std::shared_ptr<struct Closure>,
+        std::shared_ptr<struct Tuple>>;
 
     struct EnvV {
         std::unordered_map<std::string, Val> m;
@@ -23,6 +26,10 @@ namespace miniml {
         std::string param;
         ExprPtr body;
         std::shared_ptr<EnvV> env;  // captured
+    };
+
+    struct Tuple {
+        std::vector<Val> elements;
     };
 
 } // namespace miniml

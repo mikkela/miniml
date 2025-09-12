@@ -4,9 +4,12 @@
 #include <string>
 #include "parser/parse_to_ast.hpp"
 #include "semantic/ScopeCheck.hpp"   // hvis du valgte mappen "semantic/"
-#include "types/Infer.hpp"           // infer(...) + showType(...)
 #include "types/Type.hpp"
 #include "evaluator/Eval.hpp"       // eval(...) + showVal(...)
+#include "types/Scheme.hpp"
+#include "types/Unify.hpp"
+#include "types/Infer.hpp"
+#include "types/Pretty.hpp"
 // (ellers "scope/ScopeCheck.hpp")
 
 static std::string readAll(const char* path) {
